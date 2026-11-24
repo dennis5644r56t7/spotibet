@@ -46,6 +46,10 @@ type CrashReason = 'NATURAL' | 'POOL_GUARD';
  */
 export class AviatorEngine {
   private io: SocketIOServer;
+  /** Socket.IO room this engine owns. Every broadcast is scoped to it. */
+  public readonly roomId: string;
+  public readonly roomName: string;
+  public readonly maxPlayers: number;
   private state: RoundState = 'COUNTDOWN';
   private currentRoundId: string = '';
   private currentRoundDbId: string = ''; // real GameRound.id in DB
@@ -68,8 +72,11 @@ export class AviatorEngine {
   };
   private history: CrashHistoryItem[] = [];
 
-  constructor(io: SocketIOServer) {
+  constructor(io: SocketIOServer, roomId = 'default', roomName = 'Main', maxPlayers = 1000) {
     this.io = io;
+    this.roomId = roomId;
+    this.roomName = roomName;
+    this.maxPlayers = maxPlayers;
     this.initialize();
   }
 
@@ -133,7 +140,7 @@ export class AviatorEngine {
     this.countdownTimer = setInterval(() => {
       timeLeft = Math.max(0, timeLeft - 0.1);
 
-      this.io.emit('aviator:countdown', {
+      this.io.to(this.roomId).emit('aviator:countdown', {
         roundId: this.currentRoundId,
         serverSeedHash: this.serverSeedHash,
         timeLeft: parseFloat(timeLeft.toFixed(1)),
@@ -156,7 +163,7 @@ export class AviatorEngine {
     this.flightStartTime = Date.now();
     this.currentMultiplier = 1.00;
 
-    this.io.emit('aviator:takeoff', {
+    this.io.to(this.roomId).emit('aviator:takeoff', {
       roundId: this.currentRoundId,
       serverSeedHash: this.serverSeedHash,
       activeBets: Array.from(this.activeBets.values()),
@@ -187,7 +194,7 @@ export class AviatorEngine {
       }
 
       // Broadcast tick to all connected players
-      this.io.emit('aviator:tick', {
+      this.io.to(this.roomId).emit('aviator:tick', {
         roundId: this.currentRoundId,
         multiplier: this.currentMultiplier,
         elapsed: elapsedSeconds,
@@ -387,7 +394,7 @@ export class AviatorEngine {
       }).catch((err) => console.error('[Aviator] Failed to mark round completed:', err));
     }
 
-    this.io.emit('aviator:crashed', {
+    this.io.to(this.roomId).emit('aviator:crashed', {
       roundId: this.currentRoundId,
       crashPoint: finalCrash,
       serverSeed: this.serverSeed,
@@ -446,7 +453,7 @@ export class AviatorEngine {
     this.activeBets.set(bet.id, activeBet);
 
     // Broadcast bet placed event to all players
-    this.io.emit('aviator:bet_placed', {
+    this.io.to(this.roomId).emit('aviator:bet_placed', {
       betId: bet.id,
       username: params.username,
       amount: params.amount,
@@ -486,7 +493,7 @@ export class AviatorEngine {
     // The stake leaves the round pool
     this.roundPools[bet.balanceType].voidStake(bet.amount);
 
-    this.io.emit('aviator:bet_cancelled', {
+    this.io.to(this.roomId).emit('aviator:bet_cancelled', {
       betId,
       userId,
       totalBets: this.activeBets.size,
@@ -549,7 +556,7 @@ export class AviatorEngine {
     });
 
     // Broadcast cashout to multiplayer room
-    this.io.emit('aviator:cashed_out', {
+    this.io.to(this.roomId).emit('aviator:cashed_out', {
       betId,
       userId,
       username: bet.username,
@@ -566,6 +573,7 @@ export class AviatorEngine {
    * Get Current State for newly connected clients
    */
   public getCurrentState() {
+    const room = this.io.sockets.adapter.rooms.get(this.roomId);
     return {
       state: this.state,
       roundId: this.currentRoundId,
@@ -574,6 +582,10 @@ export class AviatorEngine {
       history: this.history.slice(0, 30),
       activeBets: Array.from(this.activeBets.values()),
       pool: this.roundPoolSnapshot(),
+      roomId: this.roomId,
+      roomName: this.roomName,
+      players: room ? room.size : 0,
+      maxPlayers: this.maxPlayers,
     };
   }
 }

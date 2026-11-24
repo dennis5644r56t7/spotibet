@@ -9,7 +9,7 @@ import cors, { CorsOptions } from 'cors';
 import jwt from 'jsonwebtoken';
 import { connectDB } from './config/db';
 import apiRoutes from './routes/api.routes';
-import { AviatorEngine } from './games/aviator/aviator.engine';
+import { AviatorRoomManager } from './games/aviator/aviator.room-manager';
 
 const app = express();
 const server = http.createServer(app);
@@ -135,7 +135,7 @@ export const io = new SocketIOServer(server, {
 });
 
 // Initialize Aviator continuous flight engine
-const aviatorEngine = new AviatorEngine(io);
+const aviatorRooms = new AviatorRoomManager(io, 1000);
 
 // Socket.io authentication & event routing
 io.on('connection', (socket) => {
@@ -154,13 +154,30 @@ io.on('connection', (socket) => {
   }
 
   // Send current game state immediately to newly connected client
-  socket.emit('aviator:state', aviatorEngine.getCurrentState());
+  socket.emit('aviator:state', aviatorRooms.getState('default'));
+
+  // Join a parallel room (1000 players each). The engine for that room owns
+  // the round and all broadcasts are scoped to it.
+  socket.on('aviator:join_room', (data: { roomId?: string }, callback) => {
+    const joined = aviatorRooms.join(socket, data?.roomId);
+    const state = aviatorRooms.getState(joined.roomId);
+    socket.emit('aviator:state', state);
+    callback?.({ ...joined, success: true });
+    io.to(joined.roomId).emit('aviator:rooms', { rooms: aviatorRooms.listRooms() });
+  });
+
+  socket.on('aviator:rooms', (callback) => {
+    callback?.({ rooms: aviatorRooms.listRooms() });
+  });
 
   // Re-send on demand: game components mount after the socket is already
   // connected (e.g. navigating from the lobby), so they miss the initial push
   // and would otherwise show an empty multiplier history until the next crash.
-  socket.on('aviator:get_state', () => {
-    socket.emit('aviator:state', aviatorEngine.getCurrentState());
+  socket.on('aviator:get_state', (data: { roomId?: string } | undefined, callback?: any) => {
+    const cb = typeof data === 'function' ? data : callback;
+    const roomId = (typeof data === 'object' && data?.roomId) || socket.data.aviatorRoom || 'default';
+    socket.emit('aviator:state', aviatorRooms.getState(roomId));
+    cb?.({ ok: true });
   });
 
   // Handle Aviator Bet
@@ -171,7 +188,7 @@ io.on('connection', (socket) => {
       }
 
       const activeUser = socket.data.user || user;
-      const res = await aviatorEngine.placeBet({
+      const res = await aviatorRooms.placeBet(socket.data.aviatorRoom, {
         userId: activeUser.id,
         username: activeUser.username,
         amount: data.amount,
@@ -193,7 +210,7 @@ io.on('connection', (socket) => {
       }
 
       const activeUser = socket.data.user || user;
-      const res = await aviatorEngine.cancelBet(activeUser.id, data.betId);
+      const res = await aviatorRooms.cancelBet(socket.data.aviatorRoom, activeUser.id, data.betId);
 
       callback?.({ success: true, newBalance: res.newBalance });
     } catch (error: any) {
@@ -209,7 +226,7 @@ io.on('connection', (socket) => {
       }
 
       const activeUser = socket.data.user || user;
-      const res = await aviatorEngine.cashoutBet(activeUser.id, data.betId);
+      const res = await aviatorRooms.cashoutBet(socket.data.aviatorRoom, activeUser.id, data.betId);
 
       callback?.({
         success: true,

@@ -72,6 +72,9 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
   const [roundId, setRoundId] = useState('');
   const [history, setHistory] = useState<any[]>([]);
   const [activeBets, setActiveBets] = useState<any[]>([]);
+  const [roomId, setRoomId] = useState('default');
+  const roomIdRef = useRef('default');
+  const [rooms, setRooms] = useState<any[]>([]);
   const [leftTab, setLeftTab] = useState<'ALL' | 'MY' | 'TOP'>('ALL');
   const [myBetsHistory, setMyBetsHistory] = useState<any[]>([]);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
@@ -188,6 +191,8 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       setMultiplier(data.multiplier);
       liveMultiplierRef.current = data.multiplier;
       if (Array.isArray(data.history)) setHistory(data.history);
+      if (data.roomId) { setRoomId(data.roomId); roomIdRef.current = data.roomId; }
+      if (Array.isArray(data.rooms)) setRooms(data.rooms);
       if (data.activeBets && data.activeBets.length > 0) setActiveBets(data.activeBets);
     });
 
@@ -282,19 +287,26 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       }
     });
 
+    socket.on('aviator:rooms', (data) => {
+      if (Array.isArray(data?.rooms)) setRooms(data.rooms);
+    });
+
     socket.on('aviator:bet_cancelled', (data) => {
       setActiveBets((prev) => prev.filter((b) => b.betId !== data.betId));
     });
 
-    // Ask for a fresh snapshot: this component can mount long after the socket
-    // connected, so the initial server push may have been missed. Also repeat
-    // on (re)connect so history is never left empty after a reconnect.
-    const requestState = () => socket.emit('aviator:get_state');
-    socket.on('connect', requestState);
-    requestState();
+    // Join the selected room on every (re)connect so broadcasts are scoped to
+    // the right parallel round.
+    const joinRoom = () => {
+      socket.emit('aviator:join_room', { roomId: roomIdRef.current });
+      socket.emit('aviator:get_state', { roomId: roomIdRef.current });
+    };
+    socket.on('connect', joinRoom);
+    joinRoom();
 
     return () => {
-      socket.off('connect', requestState);
+      socket.off('connect', joinRoom);
+      socket.off('aviator:rooms');
       socket.off('aviator:state');
       socket.off('aviator:countdown');
       socket.off('aviator:takeoff');
@@ -847,6 +859,31 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
 
       {/* RIGHT MAIN ARENA: order-1 on mobile (TOP!), lg:order-2 on desktop (RIGHT!) */}
       <div className={`aviator-main order-1 lg:order-2 flex-1 flex flex-col lg:h-full gap-1 sm:gap-2 min-h-0 ${!isBetsExpanded ? 'aviator-bets-collapsed' : ''}`}>
+        {/* PARALLEL ROOMS — each room runs its own round with up to 1000 players. */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-shrink-0 py-0.5">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-[#6f7b90] flex-shrink-0">Rooms</span>
+          {(rooms.length ? rooms : [{ roomId: 'default', roomName: 'Main', players: 0 }]).map((r) => (
+            <button
+              key={r.roomId}
+              type="button"
+              onClick={() => {
+                sound.playChip();
+                roomIdRef.current = r.roomId;
+                setRoomId(r.roomId);
+                socket?.emit('aviator:join_room', { roomId: r.roomId });
+              }}
+              className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
+                roomId === r.roomId
+                  ? 'bg-[#dc1c34] border-[#dc1c34] text-white'
+                  : 'bg-[#12151d] border-[#232733] text-[#98a3b8] hover:text-[#eef2f8]'
+              }`}
+              title={`${r.roomName} — ${r.players}/${1000} players`}
+            >
+              {r.roomName} <span className="opacity-70">{r.players}</span>
+            </button>
+          ))}
+        </div>
+
         {/* TOP BAR — exactly like the live game: balance + menu get their own
             row, and the recent multipliers scroll on a separate strip below it.
             Sharing one line is what made the header look cramped/amateur. */}

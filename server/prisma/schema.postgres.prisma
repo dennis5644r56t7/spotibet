@@ -1,0 +1,157 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  username     String      @unique
+  password     String
+  role         String      @default("USER") // USER, ADMIN
+  realBalance  Float       @default(0.0)
+  demoBalance  Float       @default(10000.0)
+  clientSeed   String      @default("lucky_player_seed")
+  avatar       String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  transactions WalletTransaction[]
+  bets         Bet[]
+  payments     PaystackPayment[]
+  withdrawals  Withdrawal[]
+
+  @@index([email])
+  @@index([username])
+}
+
+model WalletTransaction {
+  id           String   @id @default(uuid())
+  userId       String
+  type         String   // DEPOSIT, WITHDRAWAL, BET_PLACED, BET_WON, BET_REFUND, BONUS
+  amount       Float
+  currency     String   @default("KES")
+  balanceType  String   @default("DEMO") // REAL, DEMO
+  balanceAfter Float
+  reference    String?  @unique
+  status       String   @default("SUCCESS") // PENDING, SUCCESS, FAILED
+  description  String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([reference])
+}
+
+model GameRound {
+  id             String    @id @default(uuid())
+  gameType       String    // AVIATOR, ROULETTE, BLACKJACK, SLOTS, MINES
+  serverSeed     String    // Kept private until round ends
+  serverSeedHash String    // SHA-256 hash displayed before round starts
+  clientSeed     String
+  nonce          Int
+  crashPoint     Float?    // Multiplier at which Aviator crashed
+  resultData     String?   // JSON string details
+  status         String    @default("WAITING") // WAITING, ACTIVE, COMPLETED, CANCELLED
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+
+  bets           Bet[]
+
+  @@index([gameType, startedAt(sort: Desc)])
+  @@index([status])
+}
+
+model Bet {
+  id           String    @id @default(uuid())
+  userId       String
+  gameRoundId  String?
+  gameType     String    // AVIATOR, ROULETTE, BLACKJACK, SLOTS, MINES
+  amount       Float
+  currency     String    @default("KES")
+  balanceType  String    @default("DEMO") // REAL, DEMO
+  multiplier   Float?    // Crash cashout multiplier or casino win multiplier
+  payout       Float     @default(0.0)
+  status       String    @default("ACTIVE") // PENDING, ACTIVE, WON, LOST, CASHED_OUT, CANCELLED
+  betData      String?   // JSON string parameters
+  createdAt    DateTime  @default(now())
+  settledAt    DateTime?
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameRound    GameRound? @relation(fields: [gameRoundId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([gameRoundId])
+  @@index([gameType, status])
+}
+
+// House Economy ledger: durable audit trail of every stake, payout, house cut
+// and refund that moves money through the player payout pools.
+model PoolLedger {
+  id           String   @id @default(uuid())
+  poolKey      String   @default("GLOBAL") // GLOBAL (single-player pool) or aviator round id
+  gameType     String   // AVIATOR, ROULETTE, BLACKJACK, SLOTS, MINES, DICE, HOUSE
+  balanceType  String   @default("DEMO")   // REAL, DEMO — pools are tracked separately
+  type         String   // STAKE_IN, STAKE_VOID, PAYOUT_OUT, CUT_REALIZED, FLOAT_SEED
+  amount       Float    // signed: + credited to pool, - debited from pool
+  balanceAfter Float    // pool balance after this entry (in-memory authoritative value)
+  betId        String?
+  userId       String?
+  metadata     String?  // JSON string with extra context (e.g. round economics)
+  createdAt    DateTime @default(now())
+
+  @@index([poolKey, createdAt(sort: Desc)])
+  @@index([gameType, type])
+  @@index([balanceType])
+}
+
+model PaystackPayment {
+  id           String    @id @default(uuid())
+  userId       String
+  reference    String    @unique
+  amount       Float
+  currency     String    @default("KES")
+  channel      String?
+  status       String    @default("INITIALIZED") // INITIALIZED, SUCCESS, FAILED, ABANDONED
+  paidAt       DateTime?
+  metadata     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([reference])
+}
+
+model Withdrawal {
+  id             String    @id @default(uuid())
+  userId         String
+  reference      String    @unique
+  amount         Float
+  fee            Float     @default(0)
+  netAmount      Float
+  currency       String    @default("KES")
+  channel        String    // MOBILE_MONEY, BANK
+  provider       String    // MPESA, KEPSS
+  accountNumber  String
+  accountName    String
+  recipientCode  String?
+  transferCode   String?
+  status         String    @default("PENDING") // PENDING, PROCESSING, PAID, FAILED, REVERSED
+  failureReason  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  processedAt    DateTime?
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([reference])
+  @@index([status])
+}

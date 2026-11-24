@@ -1,0 +1,14 @@
+{
+  "name": "spotibet-unified",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Spotibet — one Node process serving the Next.js frontend, REST API and Socket.IO backend.",
+  "scripts": {
+    "build": "npm --prefix server install && npm --prefix client install && (cd server && npx prisma generate --schema prisma/schema.postgres.prisma) && npm --prefix server run build || true && npm --prefix client run build",
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,17 @@
+[build]
+  base = "client"
+  command = "npm run build"
+  publish = "client/.next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+# In production, redirect /api/* to your persistent game server instance (Railway/VPS)
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://your-server-backend.railway.app/api/:splat"
+#   status = 200
+#   force = true

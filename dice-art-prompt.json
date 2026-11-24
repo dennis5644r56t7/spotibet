@@ -1,0 +1,6 @@
+{
+  "source": "C:\\Users\\kariu\\.codex\\generated_images\\01a195ff-2a1d-72f1-a2de-3055d7174bfb\\exec-b6dcd21b-efa1-4bd1-b5ae-fa793b7fda35.png",
+  "prompt": "Use case: stylized-concept. Create full bleed premium 3D casino lobby tile artwork for an adult audience, landscape 4:3. Two beautiful softly rounded ivory dice tumbling in midair, deep ruby inset pips, subtle champagne metal bevels, one polished golden casino chip nearby. Sophisticated charming sculptural shapes, rich satin ceramic and glass surfaces, soft studio lighting, attractive thumbnail silhouette. Warm raspberry and rose background with softly shaded reflections. Hero objects fill 75% of frame, safe padding. Match luxurious modern casino artwork with sculpted playing cards and glossy slot reels. No letters, no words, no logos, no watermark, no UI, no childish characters.",
+  "generator": "Built-in image_gen",
+  "output": "client/public/games/dice-3d.webp"
+}

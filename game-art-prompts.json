@@ -1,0 +1,30 @@
+{
+  "generator": "Built-in image_gen",
+  "direction": "Modern sculptural 3D artwork for Sportibet game cards",
+  "assets": [
+    {
+      "key": "mines",
+      "prompt": "Use case: stylized-concept. Asset type: premium casino lobby game tile artwork for an adult audience. Create a polished contemporary 3D editorial illustration, charming rounded sculptural forms, tactile satin ceramic and translucent glass materials, sophisticated playful design, dramatic yet soft studio lighting, crisp appealing silhouette readable at thumbnail size. Single compact hero composition centered, occupying 75% of frame, generous safe padding. Landscape 4:3 composition. Full bleed seamless softly shaded studio background. No words, no captions, no logos, no watermark, no UI, no frames, no characters, no childish toy aesthetic, no flat vector art, no vintage casino machines, no excessive neon glow. Subject: one large exquisite turquoise and icy blue faceted crystal hovering tilted above a small cushion-like blue pedestal, accompanied by a small polished dark navy spherical mine with a short curved gold fuse and tiny amber spark. A few smaller gemstone fragments float nearby. Background rich cobalt and periwinkle blue. Make crystal depth, refracted light and soft rounded bevels beautiful.",
+      "source": "C:\\Users\\kariu\\.codex\\generated_images\\01a195ff-2a1d-72f1-a2de-3055d7174bfb\\exec-db63821f-247a-4e37-ac91-b4084742bb5d.png",
+      "output": "client/public/games/mines-3d.webp"
+    },
+    {
+      "key": "roulette",
+      "prompt": "Use case: stylized-concept. Asset type: premium casino lobby game tile artwork for an adult audience. Create a polished contemporary 3D editorial illustration, charming rounded sculptural forms, tactile satin ceramic and translucent glass materials, sophisticated playful design, dramatic yet soft studio lighting, crisp appealing silhouette readable at thumbnail size. Single compact hero composition centered, occupying 75% of frame, generous safe padding. Landscape 4:3 composition. Full bleed seamless softly shaded studio background. No words, no captions, no logos, no watermark, no UI, no frames, no characters, no childish toy aesthetic, no flat vector art, no vintage casino machines, no excessive neon glow. Subject: a sculptural modern roulette wheel, tilted in dynamic three-quarter perspective, deep emerald outer rim and elegant champagne gold metal, alternating burgundy and ink-dark pockets, a clean ivory ball hovering just over rim, two softly rounded casino chips floating off to one side. Background rich deep teal with mint reflected light. Sleek wheel, no readable tiny numerals, not flat front view.",
+      "source": "C:\\Users\\kariu\\.codex\\generated_images\\01a195ff-2a1d-72f1-a2de-3055d7174bfb\\exec-3fcb17ed-8e49-4914-a7df-247f4e21f7ba.png",
+      "output": "client/public/games/roulette-3d.webp"
+    },
+    {
+      "key": "blackjack",
+      "prompt": "Use case: stylized-concept. Asset type: premium casino lobby game tile artwork for an adult audience. Create a polished contemporary 3D editorial illustration, charming rounded sculptural forms, tactile satin ceramic and translucent glass materials, sophisticated playful design, dramatic yet soft studio lighting, crisp appealing silhouette readable at thumbnail size. Single compact hero composition centered, occupying 75% of frame, generous safe padding. Landscape 4:3 composition. Full bleed seamless softly shaded studio background. No words, no captions, no logos, no watermark, no UI, no frames, no characters, no childish toy aesthetic, no flat vector art, no vintage casino machines, no excessive neon glow. Subject: two oversized elegantly curved ivory playing cards floating in a dynamic fan, a dramatic sculptural black spade and a small crimson heart on the faces, a pair of deep lavender and champagne poker chips below. Rounded beveled edges, supple satin card surfaces and tactile depth. Background rich violet and soft lavender reflected light. No alphabet letters or numbers needed; suits are the focus.",
+      "source": "C:\\Users\\kariu\\.codex\\generated_images\\01a195ff-2a1d-72f1-a2de-3055d7174bfb\\exec-5a074dad-0559-41ad-a5cf-89bef5f939d4.png",
+      "output": "client/public/games/blackjack-3d.webp"
+    },
+    {
+      "key": "slots",
+      "prompt": "Use case: stylized-concept. Asset type: premium casino lobby game tile artwork for an adult audience. Create a polished contemporary 3D editorial illustration, charming rounded sculptural forms, tactile satin ceramic and translucent glass materials, sophisticated playful design, dramatic yet soft studio lighting, crisp appealing silhouette readable at thumbnail size. Single compact hero composition centered, occupying 75% of frame, generous safe padding. Landscape 4:3 composition. Full bleed seamless softly shaded studio background. No words, no captions, no logos, no watermark, no UI, no frames, no characters, no childish toy aesthetic, no flat vector art, no vintage casino machines, no excessive neon glow. Subject: a compact sculptural contemporary slot reel console, elegant rounded cream and champagne enclosure, three luminous ivory reel windows with rich coral red seven symbols, small cherry-red spherical lever knob at right, two polished golden coins floating nearby. Modern art object rather than vintage machine, soft rounded bezel, beautiful glass reflections. Background saturated apricot and warm amber, soft peach highlights. Only the reel symbols 7 7 7 may appear, no other text.",
+      "source": "C:\\Users\\kariu\\.codex\\generated_images\\01a195ff-2a1d-72f1-a2de-3055d7174bfb\\exec-ce641452-3e84-40c7-823c-3b4dc4fbc599.png",
+      "output": "client/public/games/slots-3d.webp"
+    }
+  ]
+}

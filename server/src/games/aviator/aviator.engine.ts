@@ -55,8 +55,8 @@ type CrashReason = 'NATURAL' | 'POOL_GUARD';
 
 /** A user's maximum single payout is a multiple of their lifetime deposits. */
 const MAX_PAYOUT_MULTIPLE_OF_DEPOSIT = Number(process.env.AVIATOR_MAX_PAYOUT_MULTIPLE || 10);
-/** End a flight early when worst-case cashouts exceed this multiple of the distributable pool. */
-const RISK_STOP_RATIO = Number(process.env.AVIATOR_RISK_STOP_RATIO || 1.5);
+/** End a flight only on extreme exposure — ROUND RULE at 10.0 = ~9.0x staked. */
+const RISK_STOP_RATIO = Number(process.env.AVIATOR_RISK_STOP_RATIO || 10.0);
 
 /**
  * Aviator multiplayer crash game with a HOUSE POOL GUARD.

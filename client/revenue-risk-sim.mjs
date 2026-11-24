@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 
 const USERS = Number(process.env.SIM_USERS || 10_000);
 const ROOMS = Number(process.env.SIM_ROOMS || 10);
-const ROUNDS = 5;
+const ROUNDS = Number(process.env.SIM_ROUNDS || 5);
 const DEP_FEE = 0.015;
 const WD_FEE = 0.01;
 const HOUSE_EDGE = 0.04;
@@ -45,9 +45,10 @@ function crashPoint(seed, nonce) {
 
 function simulate(cfg) {
   const {
-    rake = .10, whalePct = 0, dynamic = 'none', bias = 1, capPayouts = true,
+    rake = .10, whalePct = 0, dynamic = 'none', bias = 1, capPayouts = true, riskStop = true,
   } = cfg;
   let deposits = 0, staked = 0, paid = 0, guardRounds = 0, whaleWins = 0, maxWhaleWin = 0;
+  const roundLog = [];
   const users = Array.from({ length: USERS }, (_, i) => ({
     room: i % ROOMS,
     whale: Math.random() < whalePct,
@@ -65,6 +66,11 @@ function simulate(cfg) {
         whale: u.whale,
       }));
       const stake = bets.reduce((s, b) => s + b.amount, 0);
+      const naturalCrash = crash;
+      // Match the live engine's ROUND RULE: end early when worst-case cashouts
+      // exceed a generous multiple of the distributable pool. At 3.0 the stop
+      // is ~2.70x staked (0.9 × 3.0) — only extreme flights are cut short.
+      if (riskStop && crash > (1 - rake) * 10.0) crash = Math.round((1 - rake) * 10.0 * 100) / 100;
 
       // Exposure-based "controls" — these are what-if levers, not recommendations.
       let effRake = rake;
@@ -88,12 +94,22 @@ function simulate(cfg) {
         total = cap;
         guardRounds++;
       }
+      roundLog.push({
+        room: room === 0 ? 'default' : `room-${room + 1}`,
+        round: round + 1,
+        reached: crash,
+        target: naturalCrash,
+        stoppedEarly: crash < naturalCrash,
+        staked: Math.round(stake),
+        paid: Math.round(total),
+        house: Math.round(stake - total),
+      });
       staked += stake; paid += total;
     }
   }
   const gross = staked - paid;
   const fees = deposits * DEP_FEE + (paid + staked) * WD_FEE;
-  return { deposits, staked, paid, gross, edge: gross / staked, net: gross - fees, guardRounds, whaleWins, maxWhaleWin };
+  return { deposits, staked, paid, gross, edge: gross / staked, net: gross - fees, guardRounds, whaleWins, maxWhaleWin, roundLog };
 }
 
 const m = (n) => 'KES ' + Math.round(n).toLocaleString();
@@ -104,7 +120,7 @@ function row(label, r) {
   );
 }
 
-console.log('=== 10,000 users / 10 rooms / 5 rounds / mixed deposits & bets ===');
+console.log(`=== ${USERS.toLocaleString()} users / ${ROOMS} rooms / ${ROUNDS} rounds / random cashouts ===`);
 console.log('scenario'.padEnd(30) + 'handle'.padEnd(15) + 'payouts'.padEnd(15) + 'gross revenue'.padEnd(15) + ' edge ' + 'net profit'.padEnd(15) + ' risk flags');
 console.log('-'.repeat(140));
 
@@ -121,3 +137,13 @@ row('5% whales + exposure rake', simulate({ rake: .10, whalePct: .05, dynamic: '
 for (const bias of [.9, .7, .5]) {
   row(`5% whales + crash bias ${bias}`, simulate({ rake: .10, whalePct: .05, dynamic: 'bias', bias }));
 }
+
+const main = simulate({ rake: .10 });
+console.log('\nROUND-BY-ROUND — default room (10k users, 10 rounds):');
+for (const r of main.roundLog.filter((x) => x.room === 'default')) {
+  console.log(
+    `  ROUND #${String(r.round).padStart(2)} reached=${r.reached.toFixed(2)}x target=${r.target.toFixed(2)}x ` +
+    `${r.stoppedEarly ? 'SYSTEM FLEW AWAY EARLY (risk stop)' : 'natural crash'} | staked ${m(r.staked)} | house ${m(r.house)}`
+  );
+}
+console.log(`RISK STOPS: ${main.roundLog.filter((x) => x.stoppedEarly).length}/${main.roundLog.length} rounds`);

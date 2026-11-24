@@ -153,6 +153,10 @@ io.on('connection', (socket) => {
     }
   }
 
+  // Admin-only socket room for house risk telemetry (exposure board).
+  const role = (socket.data.user as any)?.role || (user as any)?.role;
+  if (role === 'ADMIN') socket.join('admins');
+
   // Send current game state immediately to newly connected client
   socket.emit('aviator:state', aviatorRooms.getState('default'));
 
@@ -233,6 +237,8 @@ io.on('connection', (socket) => {
         payout: res.payout,
         multiplier: res.multiplier,
         newBalance: res.newBalance,
+        capped: res.capped,
+        maxPayout: res.maxPayout,
       });
     } catch (error: any) {
       callback?.({ error: error.message || 'Failed to cash out' });

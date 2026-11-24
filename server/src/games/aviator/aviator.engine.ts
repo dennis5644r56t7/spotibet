@@ -176,7 +176,7 @@ export class AviatorEngine {
     this.io.to(this.roomId).emit('aviator:takeoff', {
       roundId: this.currentRoundId,
       serverSeedHash: this.serverSeedHash,
-      activeBets: Array.from(this.activeBets.values()),
+      activeBets: Array.from(this.activeBets.values()).map((b) => this.publicBet(b)),
       pool: this.roundPoolSnapshot(),
     });
     this.broadcastExposure();
@@ -237,7 +237,8 @@ export class AviatorEngine {
       maxPayout: b.maxPayout,
     }));
     const atRisk = users.reduce((s, u) => s + u.potential, 0);
-    this.io.to(this.roomId).emit('aviator:exposure', {
+    // Admin-only risk telemetry — never broadcast to players in the room.
+    this.io.to('admins').emit('aviator:exposure', {
       roomId: this.roomId,
       multiplier: this.currentMultiplier,
       staked: total.staked,
@@ -248,6 +249,21 @@ export class AviatorEngine {
       riskLimit: parseFloat((total.distributable * RISK_STOP_RATIO).toFixed(2)),
       players: users,
     });
+  }
+
+  /** Fields safe to broadcast to players — no deposit or limit details. */
+  private publicBet(b: ActiveBet) {
+    return {
+      betId: b.betId,
+      userId: b.userId,
+      username: b.username,
+      amount: b.amount,
+      balanceType: b.balanceType,
+      autoCashout: b.autoCashout,
+      cashedOut: b.cashedOut,
+      cashedOutMultiplier: b.cashedOutMultiplier,
+      payout: b.payout,
+    };
   }
 
   /**
@@ -523,8 +539,6 @@ export class AviatorEngine {
       username: params.username,
       amount: params.amount,
       totalBets: this.activeBets.size,
-      depositTotal,
-      maxPayout,
       pool: this.roundPoolSnapshot(),
     });
     this.broadcastExposure();
@@ -636,14 +650,10 @@ export class AviatorEngine {
       multiplier: cashoutMultiplier,
       payout,
       amount: bet.amount,
-      capped,
-      requestedPayout: capped ? parseFloat(rawPayout.toFixed(2)) : payout,
-      maxPayout: bet.maxPayout,
-      depositTotal: bet.depositTotal,
       pool: this.roundPoolSnapshot(),
     });
 
-    return { payout, multiplier: cashoutMultiplier, newBalance };
+    return { payout, multiplier: cashoutMultiplier, newBalance, capped, maxPayout: bet.maxPayout };
   }
 
   /**
@@ -657,7 +667,7 @@ export class AviatorEngine {
       multiplier: this.currentMultiplier,
       serverSeedHash: this.serverSeedHash,
       history: this.history.slice(0, 30),
-      activeBets: Array.from(this.activeBets.values()),
+      activeBets: Array.from(this.activeBets.values()).map((b) => this.publicBet(b)),
       pool: this.roundPoolSnapshot(),
       roomId: this.roomId,
       roomName: this.roomName,

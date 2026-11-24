@@ -1,3 +1,11 @@
+# This Netlify site is frontend-only. Send all visitors to the full-stack
+# deployment so the live game, API and wallet actually work.
+[[redirects]]
+  from = "/*"
+  to = "https://spotibet.onrender.com/:splat"
+  status = 301
+  force = true
+
 [build]
   base = "client"
   command = "npm run build"

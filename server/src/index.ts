@@ -62,7 +62,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Root Route - Directs visitor to Frontend UI
+// Root Route - Directs visitor to Frontend UI (standalone backend only; in
+// unified mode this would shadow Next.js's own home page).
+if (process.env.SKIP_SERVER_LISTEN !== '1') {
 app.get('/', (req, res) => {
   if (req.accepts('html')) {
     return res.send(`
@@ -100,6 +102,7 @@ app.get('/', (req, res) => {
     message: `Visit ${FRONTEND_URL} to launch the Spotibet Casino UI`,
   });
 });
+}
 
 // Routes
 app.use('/api', apiRoutes);

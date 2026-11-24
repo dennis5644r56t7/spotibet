@@ -20,6 +20,10 @@ export interface ActiveBet {
   cashedOut: boolean;
   cashedOutMultiplier?: number;
   payout?: number;
+  /** Lifetime REAL deposits at bet time — the basis for the payout ceiling. */
+  depositTotal: number;
+  /** Maximum payout this bet can ever produce (deposit-based exposure limit). */
+  maxPayout: number;
 }
 
 export interface CrashHistoryItem {
@@ -33,6 +37,11 @@ export interface CrashHistoryItem {
 }
 
 type CrashReason = 'NATURAL' | 'POOL_GUARD';
+
+/** A user's maximum single payout is a multiple of their lifetime deposits. */
+const MAX_PAYOUT_MULTIPLE_OF_DEPOSIT = Number(process.env.AVIATOR_MAX_PAYOUT_MULTIPLE || 10);
+/** End a flight early when worst-case cashouts exceed this multiple of the distributable pool. */
+const RISK_STOP_RATIO = Number(process.env.AVIATOR_RISK_STOP_RATIO || 1.5);
 
 /**
  * Aviator multiplayer crash game with a HOUSE POOL GUARD.
@@ -65,6 +74,7 @@ export class AviatorEngine {
   private flightStartTime: number = 0;
   private countdownTimer: NodeJS.Timeout | null = null;
   private flightLoopInterval: NodeJS.Timeout | null = null;
+  private exposureInterval: NodeJS.Timeout | null = null;
   private activeBets: Map<string, ActiveBet> = new Map(); // betId -> ActiveBet
   private roundPools: { REAL: RoundPool; DEMO: RoundPool } = {
     REAL: new RoundPool(),
@@ -169,6 +179,7 @@ export class AviatorEngine {
       activeBets: Array.from(this.activeBets.values()),
       pool: this.roundPoolSnapshot(),
     });
+    this.broadcastExposure();
 
     // 50ms tick rate for smooth multiplier progression
     this.flightLoopInterval = setInterval(() => {
@@ -206,6 +217,37 @@ export class AviatorEngine {
         this.endFlight('NATURAL');
       }
     }, 50);
+
+    // Live exposure board at 4Hz — each player's potential cashout at the
+    // current multiplier, who has cashed out, and the room's remaining funds.
+    this.exposureInterval = setInterval(() => this.broadcastExposure(), 250);
+  }
+
+  /** Broadcast the room's real-time risk/exposure snapshot. */
+  private broadcastExposure() {
+    const total = this.roundPoolSnapshot().total;
+    const users = Array.from(this.activeBets.values()).map((b) => ({
+      betId: b.betId,
+      username: b.username,
+      amount: b.amount,
+      cashedOut: b.cashedOut,
+      payout: b.cashedOut ? b.payout || 0 : 0,
+      potential: b.cashedOut ? 0 : parseFloat((b.amount * this.currentMultiplier).toFixed(2)),
+      depositTotal: b.depositTotal,
+      maxPayout: b.maxPayout,
+    }));
+    const atRisk = users.reduce((s, u) => s + u.potential, 0);
+    this.io.to(this.roomId).emit('aviator:exposure', {
+      roomId: this.roomId,
+      multiplier: this.currentMultiplier,
+      staked: total.staked,
+      paidOut: total.paidOut,
+      distributable: total.distributable,
+      remaining: total.remaining,
+      atRisk: parseFloat(atRisk.toFixed(2)),
+      riskLimit: parseFloat((total.distributable * RISK_STOP_RATIO).toFixed(2)),
+      players: users,
+    });
   }
 
   /**
@@ -235,14 +277,17 @@ export class AviatorEngine {
   private shouldPoolGuardStop(): boolean {
     for (const type of ['REAL', 'DEMO'] as const) {
       const pool = this.roundPools[type];
-      if (pool.staked <= 0 || pool.paidOut <= 0) continue;
+      if (pool.staked <= 0) continue;
       if (!this.hasUncashedBets(type)) continue;
       // Worst case: every remaining flyer cashes out at the current multiplier.
+      // Proactive risk stop — end the flight before we could owe more than the
+      // distributable pool can cover (plus a configurable tolerance).
       const atRisk = this.uncashedPayoutAt(this.currentMultiplier, type);
-      if (pool.paidOut + atRisk > pool.distributable && pool.shouldSoftStop()) {
+      const riskLimit = pool.distributable * RISK_STOP_RATIO;
+      if (pool.paidOut + atRisk > riskLimit) {
         console.log(
-          `[Aviator] Pool guard: ${type} paid ${pool.paidOut.toFixed(2)} of ${pool.distributable.toFixed(2)}, ` +
-            `remaining flyers at risk ${atRisk.toFixed(2)} — ending flight at ${this.currentMultiplier.toFixed(2)}x`
+          `[Aviator] Risk stop: ${type} paid ${pool.paidOut.toFixed(2)} + at-risk ${atRisk.toFixed(2)} ` +
+            `exceeds ${riskLimit.toFixed(2)} — ending flight at ${this.currentMultiplier.toFixed(2)}x`
         );
         return true;
       }
@@ -298,6 +343,10 @@ export class AviatorEngine {
     if (this.flightLoopInterval) {
       clearInterval(this.flightLoopInterval);
       this.flightLoopInterval = null;
+    }
+    if (this.exposureInterval) {
+      clearInterval(this.exposureInterval);
+      this.exposureInterval = null;
     }
 
     void this.settleCrash(reason).catch((err) =>
@@ -440,6 +489,20 @@ export class AviatorEngine {
     // The stake joins this round's pool (the wallet debit already succeeded)
     this.roundPools[params.balanceType].addStake(params.amount);
 
+    // Lifetime REAL deposits decide how much this user can ever win from one
+    // bet. Demo money is unlimited because it has no cash value.
+    let depositTotal = 0;
+    if (params.balanceType === 'REAL') {
+      const agg = await prisma.walletTransaction.aggregate({
+        where: { userId: params.userId, type: 'DEPOSIT', status: 'SUCCESS', balanceType: 'REAL' },
+        _sum: { amount: true },
+      });
+      depositTotal = Number(agg._sum.amount || 0);
+    }
+    const maxPayout = params.balanceType === 'REAL'
+      ? Math.max(params.amount, depositTotal * MAX_PAYOUT_MULTIPLE_OF_DEPOSIT)
+      : Number.MAX_SAFE_INTEGER;
+
     const activeBet: ActiveBet = {
       betId: bet.id,
       userId: params.userId,
@@ -448,6 +511,8 @@ export class AviatorEngine {
       balanceType: params.balanceType,
       autoCashout: params.autoCashout,
       cashedOut: false,
+      depositTotal,
+      maxPayout,
     };
 
     this.activeBets.set(bet.id, activeBet);
@@ -458,8 +523,11 @@ export class AviatorEngine {
       username: params.username,
       amount: params.amount,
       totalBets: this.activeBets.size,
+      depositTotal,
+      maxPayout,
       pool: this.roundPoolSnapshot(),
     });
+    this.broadcastExposure();
 
     return { bet, newBalance };
   }
@@ -522,8 +590,13 @@ export class AviatorEngine {
       throw new Error('Bet has already been cashed out');
     }
 
+    // Cashouts always pay, but a REAL-money bet can never pay more than the
+    // exposure ceiling derived from the player's lifetime deposits. This is
+    // disclosed in the UI before the round starts.
     const cashoutMultiplier = customMultiplier || this.currentMultiplier;
-    const payout = parseFloat((bet.amount * cashoutMultiplier).toFixed(2));
+    const rawPayout = bet.amount * cashoutMultiplier;
+    const capped = bet.balanceType === 'REAL' && rawPayout > bet.maxPayout;
+    const payout = parseFloat((capped ? bet.maxPayout : rawPayout).toFixed(2));
 
     // ── FAIRNESS RULE ────────────────────────────────────────────────────
     // A cashout accepted while the plane is still flying ALWAYS pays at the
@@ -563,6 +636,10 @@ export class AviatorEngine {
       multiplier: cashoutMultiplier,
       payout,
       amount: bet.amount,
+      capped,
+      requestedPayout: capped ? parseFloat(rawPayout.toFixed(2)) : payout,
+      maxPayout: bet.maxPayout,
+      depositTotal: bet.depositTotal,
       pool: this.roundPoolSnapshot(),
     });
 

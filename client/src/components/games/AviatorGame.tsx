@@ -75,6 +75,8 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
   const [roomId, setRoomId] = useState('default');
   const roomIdRef = useRef('default');
   const [rooms, setRooms] = useState<any[]>([]);
+  const [exposure, setExposure] = useState<any>(null);
+  const [showExposure, setShowExposure] = useState(false);
   const [leftTab, setLeftTab] = useState<'ALL' | 'MY' | 'TOP'>('ALL');
   const [myBetsHistory, setMyBetsHistory] = useState<any[]>([]);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
@@ -291,6 +293,8 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       if (Array.isArray(data?.rooms)) setRooms(data.rooms);
     });
 
+    socket.on('aviator:exposure', (data) => setExposure(data));
+
     socket.on('aviator:bet_cancelled', (data) => {
       setActiveBets((prev) => prev.filter((b) => b.betId !== data.betId));
     });
@@ -307,6 +311,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
     return () => {
       socket.off('connect', joinRoom);
       socket.off('aviator:rooms');
+      socket.off('aviator:exposure');
       socket.off('aviator:state');
       socket.off('aviator:countdown');
       socket.off('aviator:takeoff');
@@ -882,7 +887,44 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
               {r.roomName} <span className="opacity-70">{r.players}</span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setShowExposure((v) => !v)}
+            className={`flex-shrink-0 ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${
+              showExposure
+                ? 'bg-[#f0b45c] border-[#f0b45c] text-[#12151d]'
+                : 'bg-[#12151d] border-[#232733] text-[#98a3b8]'
+            }`}
+          >
+            Risk
+          </button>
         </div>
+
+        {showExposure && (
+          <div className="flex-shrink-0 bg-[#0e1015] border border-[#232733] rounded-xl p-2 text-[10px]">
+            <div className="grid grid-cols-4 gap-1 text-center mb-1.5">
+              <div><div className="text-[#6f7b90]">Staked</div><div className="font-mono font-bold text-[#eef2f8]">{formatAmount(exposure?.staked || 0)}</div></div>
+              <div><div className="text-[#6f7b90]">Paid out</div><div className="font-mono font-bold text-[#2fd08a]">{formatAmount(exposure?.paidOut || 0)}</div></div>
+              <div><div className="text-[#6f7b90]">At risk</div><div className={`font-mono font-bold ${(exposure?.atRisk || 0) > (exposure?.riskLimit || 0) ? 'text-[#f4587a]' : 'text-[#f0b45c]'}`}>{formatAmount(exposure?.atRisk || 0)}</div></div>
+              <div><div className="text-[#6f7b90]">Remaining</div><div className="font-mono font-bold text-[#5cc0f2]">{formatAmount(exposure?.remaining || 0)}</div></div>
+            </div>
+            <div className="text-[9px] text-[#6f7b90] mb-1">
+              At {(exposure?.multiplier || 1).toFixed(2)}x · risk stop above {formatAmount(exposure?.riskLimit || 0)} · payouts are capped so the house cut is never touched
+            </div>
+            <div className="max-h-28 overflow-y-auto no-scrollbar divide-y divide-[#1f232d]">
+              {(exposure?.players || []).map((u: any) => (
+                <div key={u.betId} className="flex items-center justify-between py-1">
+                  <span className="truncate max-w-[90px] text-[#c2cbda]">{u.username}</span>
+                  <span className="font-mono text-[#98a3b8]">bet {formatAmount(u.amount)}</span>
+                  <span className={`font-mono font-bold ${u.cashedOut ? 'text-[#2fd08a]' : 'text-[#f0b45c]'}`}>
+                    {u.cashedOut ? `out ${formatAmount(u.payout || 0)}` : `if crash now: 0 · at risk ${formatAmount(u.potential)}`}
+                  </span>
+                </div>
+              ))}
+              {!exposure?.players?.length && <div className="py-2 text-center text-[#6f7b90]">No active bets yet</div>}
+            </div>
+          </div>
+        )}
 
         {/* TOP BAR — exactly like the live game: balance + menu get their own
             row, and the recent multipliers scroll on a separate strip below it.

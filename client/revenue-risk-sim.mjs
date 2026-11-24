@@ -4,8 +4,8 @@
  */
 import crypto from 'node:crypto';
 
-const USERS = 10_000;
-const ROOMS = 10;
+const USERS = Number(process.env.SIM_USERS || 10_000);
+const ROOMS = Number(process.env.SIM_ROOMS || 10);
 const ROUNDS = 5;
 const DEP_FEE = 0.015;
 const WD_FEE = 0.01;
@@ -16,6 +16,20 @@ const BETS = [[10, .40], [50, .30], [100, .20], [500, .10]];
 const WHALE_BETS = [[5000, .40], [10000, .35], [50000, .25]];
 const TARGETS = [[1.5, .40], [2, .25], [3, .15], [5, .10], [10, .10]];
 const WHALE_TARGETS = [[2, .25], [3, .30], [5, .25], [10, .20]];
+
+// Each player cashes out at a DIFFERENT random point every round — real-world
+// reaction times, not a fixed target ladder. 5% never cash out (ride to crash).
+function randomTarget(whale = false) {
+  if (Math.random() < 0.05) return Infinity; // held to crash — loses
+  const r = Math.random();
+  let t;
+  if (r < 0.50) t = 1.05 + Math.random() * 0.45;       // 1.05–1.50
+  else if (r < 0.80) t = 1.5 + Math.random() * 1.5;    // 1.5–3.0
+  else if (r < 0.95) t = 3 + Math.random() * 5;        // 3–8
+  else t = 8 + Math.random() * 32;                     // 8–40
+  if (whale) t *= 1.3;
+  return Math.round(t * 100) / 100;
+}
 
 function pick(d, r = Math.random()) {
   let x = r;
@@ -47,7 +61,7 @@ function simulate(cfg) {
       let crash = crashPoint(crypto.randomBytes(32).toString('hex'), round + 1);
       const bets = members.map((u) => ({
         amount: u.whale ? pick(WHALE_BETS) : pick(BETS),
-        target: u.whale ? pick(WHALE_TARGETS) : pick(TARGETS),
+        target: randomTarget(u.whale),
         whale: u.whale,
       }));
       const stake = bets.reduce((s, b) => s + b.amount, 0);

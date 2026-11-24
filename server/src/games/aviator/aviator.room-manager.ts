@@ -87,6 +87,13 @@ export class AviatorRoomManager {
     };
   }
 
+  /** Admin audit log across all rooms, newest first. */
+  getRoundLog() {
+    return Array.from(this.rooms.values())
+      .flatMap((e) => e.getRoundResults())
+      .sort((a, b) => b.at.localeCompare(a.at));
+  }
+
   placeBet(roomId: string | undefined, params: Parameters<AviatorEngine['placeBet']>[0]) {
     return this.getRoom(roomId).placeBet(params);
   }

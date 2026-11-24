@@ -174,6 +174,11 @@ io.on('connection', (socket) => {
     callback?.({ rooms: aviatorRooms.listRooms() });
   });
 
+  socket.on('aviator:round_log', (callback) => {
+    if (!socket.rooms.has('admins')) return callback?.({ error: 'Admin only' });
+    callback?.({ rounds: aviatorRooms.getRoundLog() });
+  });
+
   // Re-send on demand: game components mount after the socket is already
   // connected (e.g. navigating from the lobby), so they miss the initial push
   // and would otherwise show an empty multiplier history until the next crash.

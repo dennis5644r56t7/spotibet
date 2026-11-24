@@ -36,6 +36,21 @@ export interface CrashHistoryItem {
   createdAt: Date;
 }
 
+export interface AviatorRoundResult {
+  roomId: string;
+  roundId: string;
+  roundNumber: number;
+  reachedMultiplier: number;
+  targetMultiplier: number;
+  endReason: 'NATURAL' | 'RISK_STOP';
+  stoppedEarly: boolean;
+  staked: number;
+  paidOut: number;
+  houseTake: number;
+  players: number;
+  at: string;
+}
+
 type CrashReason = 'NATURAL' | 'POOL_GUARD';
 
 /** A user's maximum single payout is a multiple of their lifetime deposits. */
@@ -81,6 +96,7 @@ export class AviatorEngine {
     DEMO: new RoundPool(),
   };
   private history: CrashHistoryItem[] = [];
+  private roundResults: AviatorRoundResult[] = [];
 
   constructor(io: SocketIOServer, roomId = 'default', roomName = 'Main', maxPlayers = 1000) {
     this.io = io;
@@ -438,6 +454,35 @@ export class AviatorEngine {
     };
     HousePoolService.recordAviatorRound(summary);
 
+    // Per-round record: what multiplier was actually reached, what the natural
+    // target was, and whether the system itself ended the flight early.
+    const result: AviatorRoundResult = {
+      roomId: this.roomId,
+      roundId: this.currentRoundId,
+      roundNumber: this.nonce,
+      reachedMultiplier: finalCrash,
+      targetMultiplier: this.crashPoint,
+      endReason: reason === 'POOL_GUARD' ? 'RISK_STOP' : 'NATURAL',
+      stoppedEarly: reason === 'POOL_GUARD',
+      staked: parseFloat(totalStaked.toFixed(2)),
+      paidOut: parseFloat((byBalance.REAL.paidOut + byBalance.DEMO.paidOut).toFixed(2)),
+      houseTake: parseFloat(totalTake.toFixed(2)),
+      players: this.activeBets.size,
+      at: new Date().toISOString(),
+    };
+    this.roundResults.unshift(result);
+    if (this.roundResults.length > 100) this.roundResults.pop();
+
+    console.log(
+      `[Aviator][${this.roomId}] ROUND ${this.nonce} reached ${finalCrash.toFixed(2)}x ` +
+        `(target ${this.crashPoint.toFixed(2)}x) — ` +
+        (result.stoppedEarly
+          ? 'SYSTEM FLEW AWAY EARLY (risk stop)'
+          : 'natural crash') +
+        ` | house ${result.houseTake.toFixed(2)} KSh`
+    );
+    this.io.to('admins').emit('aviator:round_result', result);
+
     // Mark the persisted GameRound as completed with the pool economics
     if (this.currentRoundDbId) {
       prisma.gameRound.update({
@@ -654,6 +699,11 @@ export class AviatorEngine {
     });
 
     return { payout, multiplier: cashoutMultiplier, newBalance, capped, maxPayout: bet.maxPayout };
+  }
+
+  /** Last 100 settled rounds for this room (admin audit). */
+  public getRoundResults() {
+    return this.roundResults.slice();
   }
 
   /**

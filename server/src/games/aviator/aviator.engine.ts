@@ -1,4 +1,5 @@
 import { Server as SocketIOServer } from 'socket.io';
+import crypto from 'crypto';
 import { ProvablyFair } from '../../utils/provably-fair';
 import { prisma } from '../../config/db';
 import { WalletService } from '../../services/wallet.service';
@@ -20,6 +21,12 @@ export interface ActiveBet {
   cashedOut: boolean;
   cashedOutMultiplier?: number;
   payout?: number;
+  /** Database id of the socket that owns this bet (for personalised ticks). */
+  socketId: string;
+  /** This bet's own provably-fair crash ceiling. */
+  personalCrashPoint: number;
+  /** True once this player's plane has flown away. */
+  personalCrashed: boolean;
   /** Lifetime REAL deposits at bet time — the basis for the payout ceiling. */
   depositTotal: number;
   /** Maximum payout this bet can ever produce (deposit-based exposure limit). */
@@ -209,7 +216,25 @@ export class AviatorEngine {
 
       this.currentMultiplier = Math.max(1.00, calculatedMultiplier);
 
-      // Check auto-cashouts (each goes through the same pool guard)
+      // One shared clock, but EVERY BET has its own plane and crash point.
+      // A small bet can still be flying at 5x while a big bet already died at
+      // 1.3x — next round it flips. Losers fund winners; the pool guard keeps
+      // the house protected.
+      for (const bet of this.activeBets.values()) {
+        if (bet.cashedOut || bet.personalCrashed) continue;
+        const personal = Math.min(this.currentMultiplier, bet.personalCrashPoint);
+        if (this.currentMultiplier >= bet.personalCrashPoint) {
+          bet.personalCrashed = true;
+          if (bet.socketId) {
+            this.io.to(bet.socketId).emit('aviator:personal_crash', {
+              roundId: this.currentRoundId,
+              multiplier: bet.personalCrashPoint,
+            });
+          }
+        }
+      }
+
+      // Check auto-cashouts against each player's own live multiplier
       this.checkAutoCashouts(this.currentMultiplier);
 
       // ── HOUSE POOL GUARD: know when to stop ────────────────────────────
@@ -220,13 +245,23 @@ export class AviatorEngine {
         return;
       }
 
-      // Broadcast tick to all connected players
+      // Global tick for spectators; players then receive their personal tick
+      // immediately after, which overrides the display for that socket.
       this.io.to(this.roomId).emit('aviator:tick', {
         roundId: this.currentRoundId,
         multiplier: this.currentMultiplier,
         elapsed: elapsedSeconds,
         pool: this.roundPoolSnapshot(),
       });
+      for (const bet of this.activeBets.values()) {
+        if (!bet.socketId || bet.cashedOut) continue;
+        this.io.to(bet.socketId).emit('aviator:tick', {
+          roundId: this.currentRoundId,
+          multiplier: Math.min(this.currentMultiplier, bet.personalCrashPoint),
+          elapsed: elapsedSeconds,
+          pool: this.roundPoolSnapshot(),
+        });
+      }
 
       // Check if crash threshold reached
       if (this.currentMultiplier >= this.crashPoint) {
@@ -282,6 +317,19 @@ export class AviatorEngine {
     };
   }
 
+  /** Each bet gets its own provably-fair crash point (same 4% house edge). */
+  private personalCrash(betId: string): number {
+    const hm = crypto
+      .createHmac('sha256', this.serverSeed)
+      .update(`${this.clientSeed}:${this.nonce}:${betId}`)
+      .digest('hex');
+    if (parseInt(hm.slice(0, 8), 16) % 33 === 0) return 1.00;
+    const h = parseInt(hm.slice(0, 13), 16);
+    const e = Math.pow(2, 52);
+    const m = Math.floor((100 * e - h * 0.04 * 100) / (e - h)) / 100;
+    return Math.min(10000, Math.max(1.00, m));
+  }
+
   /**
    * Live snapshot of the round pool economics (the "live math").
    */
@@ -330,8 +378,8 @@ export class AviatorEngine {
   private uncashedPayoutAt(multiplier: number, balanceType: 'REAL' | 'DEMO'): number {
     let total = 0;
     for (const bet of this.activeBets.values()) {
-      if (bet.balanceType === balanceType && !bet.cashedOut) {
-        total += bet.amount * multiplier;
+      if (bet.balanceType === balanceType && !bet.cashedOut && !bet.personalCrashed) {
+        total += bet.amount * Math.min(multiplier, bet.personalCrashPoint);
       }
     }
     return total;
@@ -349,7 +397,9 @@ export class AviatorEngine {
    */
   private async checkAutoCashouts(multiplier: number) {
     for (const [betId, bet] of this.activeBets.entries()) {
-      if (!bet.cashedOut && bet.autoCashout && multiplier >= bet.autoCashout) {
+      if (bet.cashedOut || bet.personalCrashed) continue;
+      const personal = Math.min(multiplier, bet.personalCrashPoint);
+      if (bet.autoCashout && personal >= bet.autoCashout) {
         try {
           await this.cashoutBet(bet.userId, betId, bet.autoCashout);
         } catch {
@@ -528,6 +578,7 @@ export class AviatorEngine {
     amount: number;
     balanceType: 'REAL' | 'DEMO';
     autoCashout?: number;
+    socketId?: string;
   }) {
     if (this.state !== 'COUNTDOWN') {
       throw new Error('Betting is only allowed during the countdown phase');
@@ -572,6 +623,9 @@ export class AviatorEngine {
       balanceType: params.balanceType,
       autoCashout: params.autoCashout,
       cashedOut: false,
+      socketId: params.socketId || '',
+      personalCrashPoint: this.personalCrash(bet.id),
+      personalCrashed: false,
       depositTotal,
       maxPayout,
     };
@@ -588,7 +642,7 @@ export class AviatorEngine {
     });
     this.broadcastExposure();
 
-    return { bet, newBalance };
+    return { bet, newBalance, personalCrashPoint: activeBet.personalCrashPoint };
   }
 
   /**
@@ -648,11 +702,16 @@ export class AviatorEngine {
     if (bet.cashedOut) {
       throw new Error('Bet has already been cashed out');
     }
+    if (bet.personalCrashed) {
+      throw new Error('Your plane already flew away');
+    }
 
-    // Cashouts always pay, but a REAL-money bet can never pay more than the
-    // exposure ceiling derived from the player's lifetime deposits. This is
-    // disclosed in the UI before the round starts.
-    const cashoutMultiplier = customMultiplier || this.currentMultiplier;
+    // Cashouts always pay at THIS player's live plane multiplier, never the
+    // room's. A REAL-money bet can never pay more than its exposure ceiling.
+    const personalLive = Math.min(this.currentMultiplier, bet.personalCrashPoint);
+    const cashoutMultiplier = customMultiplier
+      ? Math.min(customMultiplier, personalLive)
+      : personalLive;
     const rawPayout = bet.amount * cashoutMultiplier;
     const capped = bet.balanceType === 'REAL' && rawPayout > bet.maxPayout;
     const payout = parseFloat((capped ? bet.maxPayout : rawPayout).toFixed(2));

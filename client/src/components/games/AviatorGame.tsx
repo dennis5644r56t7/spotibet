@@ -107,6 +107,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
   const liveStateRef = useRef<'COUNTDOWN' | 'FLYING' | 'CRASHED'>('COUNTDOWN');
   const animFrameRef = useRef<number | null>(null);
   const crashOffsetRef = useRef<number>(0);
+  const personalCrashRef = useRef(false);
   const bet1PlacedRef = useRef<any>(null);
   const bet2PlacedRef = useRef<any>(null);
   const bet1ModeRef = useRef(bet1Mode);
@@ -206,6 +207,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       setBet1CashedOut(null);
       setBet2CashedOut(null);
       crashOffsetRef.current = 0;
+      personalCrashRef.current = false;
     });
 
     socket.on('aviator:takeoff', (data) => {
@@ -215,6 +217,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       setMultiplier(1.00);
       liveMultiplierRef.current = 1.00;
       crashOffsetRef.current = 0;
+      personalCrashRef.current = false;
       sound.playTakeoff();
     });
 
@@ -246,7 +249,19 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       }
     });
 
+    socket.on('aviator:personal_crash', (data) => {
+      if (personalCrashRef.current) return;
+      personalCrashRef.current = true;
+      setGameState('CRASHED');
+      liveStateRef.current = 'CRASHED';
+      setCrashPoint(data.multiplier);
+      liveMultiplierRef.current = data.multiplier;
+      sound.playCrash();
+    });
+
     socket.on('aviator:crashed', (data) => {
+      // This player's plane may have flown away earlier than the round's end.
+      if (personalCrashRef.current) return;
       setGameState('CRASHED');
       liveStateRef.current = 'CRASHED';
       setCrashPoint(data.crashPoint);
@@ -312,6 +327,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
       socket.off('aviator:countdown');
       socket.off('aviator:takeoff');
       socket.off('aviator:tick');
+      socket.off('aviator:personal_crash');
       socket.off('aviator:crashed');
       socket.off('aviator:bet_placed');
       socket.off('aviator:cashed_out');

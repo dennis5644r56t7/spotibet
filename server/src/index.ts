@@ -203,9 +203,10 @@ io.on('connection', (socket) => {
         amount: data.amount,
         balanceType: data.balanceType || 'DEMO',
         autoCashout: data.autoCashout,
+        socketId: socket.id,
       });
 
-      callback?.({ success: true, bet: res.bet, newBalance: res.newBalance });
+      callback?.({ success: true, bet: res.bet, newBalance: res.newBalance, personalCrashPoint: res.personalCrashPoint });
     } catch (error: any) {
       callback?.({ error: error.message || 'Failed to place bet' });
     }

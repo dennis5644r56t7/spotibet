@@ -337,26 +337,17 @@ export class AviatorEngine {
     }
     m = Math.min(10000, Math.max(1.00, m));
 
-    // DEMO ONLY: steer the next flight using the last STREAK_WINDOW outcomes.
-    // Heavy losses => higher ceiling; heavy wins => lower ceiling. Real money
-    // never uses this — it stays independent and provably fair.
+    // DEMO ONLY: make the demo more winnable, with random help after losses.
+    // There is no "win then forced loss" rule — nothing predictable.
     if (balanceType === 'DEMO') {
+      m = Math.max(1.5, m * 1.25);
       const recent = (this.userOutcomes.get(userId) || []).slice(-STREAK_WINDOW);
       if (recent.length >= 2) {
         const losses = recent.filter((w) => !w).length;
-        const wins = recent.length - losses;
-        const threshold = Math.ceil(STREAK_WINDOW * 0.6); // 6 of last 10
-        const twoWins = recent.slice(-2).length === 2 && recent.slice(-2).every((w) => w);
         const twoLosses = recent.slice(-2).length === 2 && recent.slice(-2).every((w) => !w);
-
-        // A shaky rhythm: two wins usually cost you the next flight, two
-        // losses usually earn a recoverable one. Longer streaks amplify it.
-        if (losses >= threshold || twoLosses) {
-          m = Math.max(2.4, m * 1.8);
-          console.log(`[Aviator][${this.roomId}] DEMO streak help: ${losses} losses/10 -> ceiling ${m.toFixed(2)}x`);
-        } else if (wins >= threshold || twoWins) {
-          m = Math.min(1.35, m * 0.55);
-          console.log(`[Aviator][${this.roomId}] DEMO streak cool: ${wins} wins/10 -> ceiling ${m.toFixed(2)}x`);
+        if (losses >= 6 || twoLosses) {
+          m = Math.max(2.0, m * (1.3 + Math.random() * 0.6));
+          console.log(`[Aviator][${this.roomId}] DEMO lucky run: ${losses} losses/10 -> ceiling ${m.toFixed(2)}x`);
         }
       }
     }

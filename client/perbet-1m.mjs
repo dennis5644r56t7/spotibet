@@ -7,13 +7,13 @@ const ROUNDS = 20, MAX_ROOM_ROUNDS = 25;
 const RAKE = 0.10, EDGE = 0.04, RISK_STOP = 9.0, PAYOUT_MULT = 10, DEPOSIT = 10_000, WINDOW = 10;
 
 function bias(m, recent) {
+  m = Math.max(1.5, m * 1.25);
   if (recent.length < 2) return m;
   const losses = recent.filter((w) => !w).length;
-  const wins = recent.length - losses;
-  const threshold = Math.ceil(WINDOW * 0.6);
   const last2 = recent.slice(-2);
-  if (losses >= threshold || (last2.length === 2 && last2.every((w) => !w))) return Math.max(2.4, m * 1.8);
-  if (wins >= threshold || (last2.length === 2 && last2.every((w) => w))) return Math.min(1.35, m * 0.55);
+  if (losses >= 6 || (last2.length === 2 && last2.every((w) => !w))) {
+    return Math.max(2.0, m * (1.3 + Math.random() * 0.6));
+  }
   return m;
 }
 

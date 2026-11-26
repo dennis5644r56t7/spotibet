@@ -64,6 +64,8 @@ type CrashReason = 'NATURAL' | 'POOL_GUARD';
 const MAX_PAYOUT_MULTIPLE_OF_DEPOSIT = Number(process.env.AVIATOR_MAX_PAYOUT_MULTIPLE || 10);
 /** End a flight only on extreme exposure — ROUND RULE at 10.0 = ~9.0x staked. */
 const RISK_STOP_RATIO = Number(process.env.AVIATOR_RISK_STOP_RATIO || 10.0);
+/** Demo-only: pilot the next plane using the player's recent win/loss streak. */
+const STREAK_WINDOW = Number(process.env.AVIATOR_STREAK_WINDOW || 5);
 
 /**
  * Aviator multiplayer crash game with a HOUSE POOL GUARD.
@@ -104,6 +106,8 @@ export class AviatorEngine {
   };
   private history: CrashHistoryItem[] = [];
   private roundResults: AviatorRoundResult[] = [];
+  /** Recent DEMO outcomes per player: true = cashed out, false = lost. */
+  private userOutcomes = new Map<string, boolean[]>();
 
   constructor(io: SocketIOServer, roomId = 'default', roomName = 'Main', maxPlayers = 1000) {
     this.io = io;
@@ -318,16 +322,47 @@ export class AviatorEngine {
   }
 
   /** Each bet gets its own provably-fair crash point (same 4% house edge). */
-  private personalCrash(betId: string): number {
+  private personalCrash(betId: string, userId: string, balanceType: 'REAL' | 'DEMO'): number {
     const hm = crypto
       .createHmac('sha256', this.serverSeed)
       .update(`${this.clientSeed}:${this.nonce}:${betId}`)
       .digest('hex');
-    if (parseInt(hm.slice(0, 8), 16) % 33 === 0) return 1.00;
-    const h = parseInt(hm.slice(0, 13), 16);
-    const e = Math.pow(2, 52);
-    const m = Math.floor((100 * e - h * 0.04 * 100) / (e - h)) / 100;
-    return Math.min(10000, Math.max(1.00, m));
+    let m: number;
+    if (parseInt(hm.slice(0, 8), 16) % 33 === 0) {
+      m = 1.00;
+    } else {
+      const h = parseInt(hm.slice(0, 13), 16);
+      const e = Math.pow(2, 52);
+      m = Math.floor((100 * e - h * 0.04 * 100) / (e - h)) / 100;
+    }
+    m = Math.min(10000, Math.max(1.00, m));
+
+    // DEMO ONLY: steer the next flight using the last STREAK_WINDOW outcomes.
+    // Heavy losses => higher ceiling; heavy wins => lower ceiling. Real money
+    // never uses this — it stays independent and provably fair.
+    if (balanceType === 'DEMO') {
+      const recent = (this.userOutcomes.get(userId) || []).slice(-STREAK_WINDOW);
+      if (recent.length >= 3) {
+        const losses = recent.filter((w) => !w).length;
+        const wins = recent.length - losses;
+        const threshold = Math.ceil(STREAK_WINDOW * 0.8);
+        if (losses >= threshold) {
+          m = Math.max(2.2, m * 1.8);
+          console.log(`[Aviator][${this.roomId}] DEMO streak help: ${losses} losses -> ceiling ${m.toFixed(2)}x`);
+        } else if (wins >= threshold) {
+          m = Math.max(1, m * 0.55);
+          console.log(`[Aviator][${this.roomId}] DEMO streak cool: ${wins} wins -> ceiling ${m.toFixed(2)}x`);
+        }
+      }
+    }
+    return Math.round(m * 100) / 100;
+  }
+
+  private recordOutcome(userId: string, won: boolean) {
+    const list = this.userOutcomes.get(userId) || [];
+    list.push(won);
+    if (list.length > STREAK_WINDOW) list.shift();
+    this.userOutcomes.set(userId, list);
   }
 
   /**
@@ -451,6 +486,7 @@ export class AviatorEngine {
       if (!bet.cashedOut) {
         bet.cashedOut = false;
         bet.payout = 0;
+        this.recordOutcome(bet.userId, false);
         try {
           await WalletService.settleLoss(betId);
         } catch (err) {
@@ -624,7 +660,7 @@ export class AviatorEngine {
       autoCashout: params.autoCashout,
       cashedOut: false,
       socketId: params.socketId || '',
-      personalCrashPoint: this.personalCrash(bet.id),
+      personalCrashPoint: this.personalCrash(bet.id, params.userId, params.balanceType),
       personalCrashed: false,
       depositTotal,
       maxPayout,
@@ -735,6 +771,7 @@ export class AviatorEngine {
     bet.cashedOut = true;
     bet.cashedOutMultiplier = cashoutMultiplier;
     bet.payout = payout;
+    this.recordOutcome(userId, true);
 
     // Credit win atomically to user's wallet
     const { newBalance } = await WalletService.settleWin({

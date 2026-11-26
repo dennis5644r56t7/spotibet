@@ -65,7 +65,7 @@ const MAX_PAYOUT_MULTIPLE_OF_DEPOSIT = Number(process.env.AVIATOR_MAX_PAYOUT_MUL
 /** End a flight only on extreme exposure — ROUND RULE at 10.0 = ~9.0x staked. */
 const RISK_STOP_RATIO = Number(process.env.AVIATOR_RISK_STOP_RATIO || 10.0);
 /** Demo-only: pilot the next plane using the player's recent win/loss streak. */
-const STREAK_WINDOW = Number(process.env.AVIATOR_STREAK_WINDOW || 5);
+const STREAK_WINDOW = Number(process.env.AVIATOR_STREAK_WINDOW || 10);
 
 /**
  * Aviator multiplayer crash game with a HOUSE POOL GUARD.
@@ -342,16 +342,21 @@ export class AviatorEngine {
     // never uses this — it stays independent and provably fair.
     if (balanceType === 'DEMO') {
       const recent = (this.userOutcomes.get(userId) || []).slice(-STREAK_WINDOW);
-      if (recent.length >= 3) {
+      if (recent.length >= 2) {
         const losses = recent.filter((w) => !w).length;
         const wins = recent.length - losses;
-        const threshold = Math.ceil(STREAK_WINDOW * 0.8);
-        if (losses >= threshold) {
-          m = Math.max(2.2, m * 1.8);
-          console.log(`[Aviator][${this.roomId}] DEMO streak help: ${losses} losses -> ceiling ${m.toFixed(2)}x`);
-        } else if (wins >= threshold) {
-          m = Math.max(1, m * 0.55);
-          console.log(`[Aviator][${this.roomId}] DEMO streak cool: ${wins} wins -> ceiling ${m.toFixed(2)}x`);
+        const threshold = Math.ceil(STREAK_WINDOW * 0.6); // 6 of last 10
+        const twoWins = recent.slice(-2).length === 2 && recent.slice(-2).every((w) => w);
+        const twoLosses = recent.slice(-2).length === 2 && recent.slice(-2).every((w) => !w);
+
+        // A shaky rhythm: two wins usually cost you the next flight, two
+        // losses usually earn a recoverable one. Longer streaks amplify it.
+        if (losses >= threshold || twoLosses) {
+          m = Math.max(2.4, m * 1.8);
+          console.log(`[Aviator][${this.roomId}] DEMO streak help: ${losses} losses/10 -> ceiling ${m.toFixed(2)}x`);
+        } else if (wins >= threshold || twoWins) {
+          m = Math.min(1.35, m * 0.55);
+          console.log(`[Aviator][${this.roomId}] DEMO streak cool: ${wins} wins/10 -> ceiling ${m.toFixed(2)}x`);
         }
       }
     }

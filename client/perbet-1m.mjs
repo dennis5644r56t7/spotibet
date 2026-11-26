@@ -4,7 +4,18 @@ import crypto from 'node:crypto';
 
 const USERS = 1_000_000, ROOMS = USERS / 1000, PER_ROOM = 1000;
 const ROUNDS = 20, MAX_ROOM_ROUNDS = 25;
-const RAKE = 0.10, EDGE = 0.04, RISK_STOP = 9.0, PAYOUT_MULT = 10, DEPOSIT = 10_000;
+const RAKE = 0.10, EDGE = 0.04, RISK_STOP = 9.0, PAYOUT_MULT = 10, DEPOSIT = 10_000, WINDOW = 10;
+
+function bias(m, recent) {
+  if (recent.length < 2) return m;
+  const losses = recent.filter((w) => !w).length;
+  const wins = recent.length - losses;
+  const threshold = Math.ceil(WINDOW * 0.6);
+  const last2 = recent.slice(-2);
+  if (losses >= threshold || (last2.length === 2 && last2.every((w) => !w))) return Math.max(2.4, m * 1.8);
+  if (wins >= threshold || (last2.length === 2 && last2.every((w) => w))) return Math.min(1.35, m * 0.55);
+  return m;
+}
 
 function crash(h) {
   if (parseInt(h.slice(0, 8), 16) % 33 === 0) return 1;
@@ -40,6 +51,7 @@ for (let room = 0; room < ROOMS; room++) {
     start: Math.floor(Math.random() * 5),
     profit: 0,
     had1000: false,
+    outcomes: [],
     history: null,
   }));
   if (!sample) { users[0].history = []; sample = users[0]; }
@@ -52,9 +64,11 @@ for (let room = 0; room < ROOMS; room++) {
     const placed = [];
     for (const u of users) {
       if (round < u.start + 1 || round > u.start + ROUNDS) continue;
-      const personal = crash(crypto.createHmac('sha256', seed).update(`bet:${room}:${round}:${u.id}`).digest('hex'));
+      const personal = bias(crash(crypto.createHmac('sha256', seed).update(`bet:${room}:${round}:${u.id}`).digest('hex')), u.outcomes);
       const t = target();
       const win = t <= Math.min(personal, global);
+      u.outcomes.push(win);
+      if (u.outcomes.length > WINDOW) u.outcomes.shift();
       const raw = win ? Math.min(u.amount * t, DEPOSIT * PAYOUT_MULT) : 0;
       placed.push([u, raw, win]);
       roundStaked += u.amount;

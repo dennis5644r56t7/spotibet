@@ -870,7 +870,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
         {/* Clean Spribe Brand Footer */}
         <div className="pt-2 border-t border-[#232733] flex items-center justify-between text-[11px] text-[#6f7b90] flex-shrink-0">
           <span className="text-[10px] text-[#98a3b8] font-mono tracking-wider">OFFICIAL GAME</span>
-          <span className="text-[10px] text-[#6f7b90] font-mono">SPRIBE</span>
+          <span className="text-[10px] text-[#6f7b90] font-mono">SPOTIBET</span>
         </div>
       </div>
 
@@ -1504,7 +1504,7 @@ export const AviatorGame: React.FC<AviatorGameProps> = ({
               {/* Clean Brand Footer */}
               <div className={`pt-1.5 border-t border-[#232733] flex items-center justify-between text-[10px] text-[#6f7b90] flex-shrink-0 ${isBetsExpanded ? '' : 'hidden'}`}>
                 <span className="text-[10px] text-[#98a3b8] font-mono tracking-wider">OFFICIAL GAME</span>
-                <span className="font-mono">SPRIBE</span>
+                <span className="font-mono">SPOTIBET</span>
               </div>
             </div>
         </div>
